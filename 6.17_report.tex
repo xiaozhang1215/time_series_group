@@ -1,0 +1,636 @@
+% !TEX program = xelatex
+\documentclass[12pt,a4paper]{article}
+
+% === 中文支持（Overleaf 兼容） ===
+\usepackage[UTF8,fontset=fandol]{ctex}
+
+% === 页面设置 ===
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% === 数学与符号 ===
+\usepackage{amsmath,amssymb,amsfonts}
+
+% === 图表 ===
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+% === 超链接 ===
+\usepackage[colorlinks=true,
+            linkcolor=blue,
+            citecolor=blue,
+            urlcolor=blue]{hyperref}
+
+% === 标题格式 ===
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\sffamily}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{1em}{}
+
+% === 枚举列表 ===
+\usepackage{enumitem}
+
+% ============================================================
+% 标题页信息
+% ============================================================
+\title{\textbf{上证综指日收益率波动率建模与预测}\\[6pt]
+        \large 基于 ARIMA-GARCH 族四模型的实证比较研究}
+\author{时间序列分析课程小组}
+\date{2026 年 6 月 17 日}
+
+\begin{document}
+
+\maketitle
+
+% ============================================================
+% 摘要
+% ============================================================
+\begin{abstract}
+\noindent
+本文基于 2000 年 1 月 4 日至 2026 年 6 月 8 日的上证综指日度收盘价数据（共 6{,}399 个交易日），采用 ARIMA 过滤后的残差序列，系统比较了四种波动率模型的拟合与预测能力：\textbf{GARCH(1,1)-Normal}、\textbf{GARCH(1,1)-t}、\textbf{EGARCH(1,1)-t} 和 \textbf{APARCH(1,1)-t}。其中 APARCH（Asymmetric Power ARCH）模型同时捕捉厚尾分布、杠杆效应和幂变换参数，是 GARCH 族中最具一般性的规格之一。采用逐步重估的滚动窗口法（每步重新估计 ARIMA 和波动率模型）进行 640 步样本外预测，使用 RMSE、MAE、SMAPE 和 QLIKE 四项指标以及 6 对 Diebold-Mariano 检验进行全面评估。
+
+结果表明：（1）上证综指收益率呈现显著的``尖峰厚尾''特征（偏度 $-0.38$，超额峰度 5.76）和极强的 ARCH 效应（$\mathrm{ARCH\text{-}LM}(10) = 610.44$, $p \approx 0$）；
+（2）在样本内拟合优度方面，\textbf{EGARCH(1,1)-t} 表现最优（$\mathrm{AIC} = 20{,}379.59$），APARCH(1,1)-t 紧随其后（$\mathrm{AIC} = 20{,}387.34$，仅高 7.74 单位），二者均显著优于 GARCH(1,1)-N（$\mathrm{AIC} = 20{,}990.68$，高出约 611 单位）；
+（3）在 640 步逐步重估样本外波动率预测中，\textbf{EGARCH(1,1)-t 同样表现最优}（$\mathrm{RMSE}=0.8235$），APARCH(1,1)-t 以 RMSE $=0.8280$ 位居第二．与前期每 50 步重估的结果相比，逐步重估使得各模型的预测精度整体提升（RMSE 降低约 8\%--10\%）；
+（4）在逐步重估框架下，\textbf{EGARCH 与 APARCH 之间的预测差异不再显著}（$\mathrm{DM}=-1.33$, $p=0.1837$），两个模型在统计意义上可视为等价．但 APARCH 在 QLIKE 指标上持续领先（$0.9352$ vs $0.9691$）；
+（5）杠杆效应参数 $\gamma_1$ 在 EGARCH 和 APARCH 模型中均未有效估计，表明上证综指在 2000 年后不存在显著的不对称波动特征；
+（6）APARCH 模型的幂参数 $\delta = 1.55$ 显著不同于 1（绝对值基准）和 2（方差基准），表明数据驱动的幂变换为波动率建模提供了额外的灵活性；
+（7）GARCH(1,1)-N 的样本外表现优于 GARCH(1,1)-t（$\mathrm{RMSE}=0.8401$ vs $0.8463$，$\mathrm{DM}=-2.34$, $p=0.0196$），再次验证了``拟合—预测''权衡的存在。
+
+\medskip
+\noindent\textbf{关键词}：上证综指；波动率建模；GARCH；EGARCH；APARCH；滚动窗口预测；逐步重估；Diebold-Mariano 检验
+\end{abstract}
+
+% ============================================================
+% 正文
+% ============================================================
+
+\section{引言}
+
+股票市场波动率是金融风险管理的核心变量。准确地建模和预测波动率对于资产定价、风险对冲、投资组合优化以及宏观审慎政策制定均具有重要意义。上海证券综合指数（上证综指）作为中国 A 股市场最具代表性的宽基指数，其波动特征的系统研究一直是学术界和实务界关注的重点。
+
+自 Engle (1982) 提出自回归条件异方差（ARCH）模型以来，波动率建模已成为金融计量经济学的重要分支。Bollerslev (1986) 进一步提出广义自回归条件异方差（GARCH）模型，以简洁的参数化形式刻画了波动率的时变性和聚集性。为捕捉金融市场中普遍存在的杠杆效应，Nelson (1991) 提出了指数 GARCH（EGARCH）模型。Ding, Granger and Engle (1993) 提出的 APARCH（Asymmetric Power ARCH）模型进一步推广了上述模型，通过引入幂变换参数 $\delta$ 和非对称参数 $\gamma$，将 GARCH、GJR-GARCH、TS-GARCH 等多种模型嵌套为特例。
+
+在实证层面，波动率建模的核心方法论问题之一是``拟合—预测''权衡：复杂的波动率模型在样本内拟合中通常表现更优，但其样本外预测优势往往不稳定。Hansen and Lunde (2005) 在一项系统性的预测比较研究中发现，鲜有模型能够持续且显著地超越简洁的 GARCH(1,1) 模型，但该研究也指出包含杠杆效应和非正态分布的模型在某些条件下具有显著的预测改进。这构成了本文研究的重要背景——在 Hansen and Lunde (2005) 的框架下，评测 APARCH 这一最广义的 GARCH 族模型在中国 A 股市场的相对表现。
+
+本文使用 2000 年至 2026 年的上证综指日度数据，系统比较 GARCH(1,1)-Normal、GARCH(1,1)-t、EGARCH(1,1)-t 和 APARCH(1,1)-t 四种波动率模型。选择 2000 年以后的数据是基于以下考量：1990 年代中国 A 股市场处于发展初期，涨跌停板制度尚未完整建立（1996 年 12 月起实施），具有系统性偏误，故剔除这些早期观测，有助于获得更具代表性的参数估计。
+
+文章结构如下：第~\ref{sec:data} 节介绍数据与预处理方法；第~\ref{sec:descriptive} 节给出描述性统计分析；第~\ref{sec:stationarity} 节进行平稳性与 ARCH 效应检验；第~\ref{sec:models} 节阐述四模型设定与估计结果；第~\ref{sec:diagnostics} 节开展模型诊断；第~\ref{sec:forecast} 节评估样本外预测能力并给出 DM 检验；第~\ref{sec:conclusion} 节总结全文并讨论研究局限。
+
+\section{数据与预处理}\label{sec:data}
+
+\subsection{数据来源}
+
+本文使用的数据为上证综指（SSE Composite Index）的日度交易数据，来源于 Wind 金融终端。原始数据包含日期、开盘价、收盘价、最高价、最低价、涨跌额、涨跌幅、成交量和成交金额共 10 个字段。原始时间跨度为 1991 年 1 月 2 日至 2026 年 6 月 8 日，共计 8{,}643 个原始观测记录。
+
+考虑到 1990 年代中国 A 股市场处于制度建设的早期阶段，本文将分析样本的起始日期设定为 2000 年 1 月 1 日。
+
+\subsection{收益率计算}
+
+令 $P_t$ 表示第 $t$ 日的收盘价，本文采用对数收益率（连续复利收益率）：
+
+\begin{equation}\label{eq:return}
+r_t = \ln\left(\frac{P_t}{P_{t-1}}\right) \times 100
+\end{equation}
+
+其中 $r_t$ 以百分比表示。剔除计算收益率时产生的第一个缺失值后，最终有效样本包含 $T = 6{,}399$ 个观测，时间跨度为 2000 年 1 月 4 日至 2026 年 6 月 8 日。
+
+\subsection{样本划分}
+
+为评估模型的样本外预测能力，本文将数据划分为训练集和测试集：
+
+\begin{itemize}[nosep]
+    \item \textbf{训练集}：前 90\% 的观测，共 $T_{\text{train}} = 5{,}759$ 个交易日（约 2000 年--2023 年）；
+    \item \textbf{测试集}：后 10\% 的观测，共 $T_{\text{test}} = 640$ 个交易日（约 2023 年--2026 年）。
+\end{itemize}
+
+所有模型均在训练集上估计参数，在测试集上评估样本外预测表现。
+
+\section{描述性统计分析}\label{sec:descriptive}
+
+\subsection{基本统计量}
+
+表~\ref{tab:desc_stats} 报告了上证综指日对数收益率（$r_t$）的基本描述性统计量。
+
+\begin{table}[H]
+\centering
+\caption{上证综指日对数收益率描述性统计量（2000--2026）}
+\label{tab:desc_stats}
+\begin{tabular}{l r}
+\toprule
+统计量 & 数值 \\
+\midrule
+观测数 $T$ & 6{,}399 \\
+均值 $\bar{r}$ (\%) & 0.01662 \\
+标准差 $s$ (\%) & 1.4517 \\
+最小值 (\%) & $-9.256$ \\
+最大值 (\%) & $+9.401$ \\
+偏度 $S$ & $-0.3807$ \\
+超额峰度 $K$ & 5.7632 \\
+Jarque-Bera 统计量 & 9{,}010.42 \\
+JB 检验 $p$ 值 & 0.00000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{分布特征分析}
+
+从表~\ref{tab:desc_stats} 可以看出，上证综指日收益率呈现典型的金融时间序列分布特征：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{均值近似为零}：日平均收益率仅为 0.01662\%，远小于标准差（1.4517\%），符合有效市场假说下的收益率难以持续预测的推断；
+    \item \textbf{尖峰厚尾}：超额峰度为 5.7632，远超正态分布的 0，说明极端事件的发生概率远高于正态分布假设下的预期值；
+    \item \textbf{轻微左偏}：偏度为 $-0.3807$，表明在 2000 年以后的市场环境中，负极端值（暴跌）的强度或频率略高于正极端值，这与中国 A 股市场``慢涨急跌''的特征一致；
+    \item \textbf{拒绝正态性}：Jarque-Bera 统计量高达 9{,}010.42，$p$ 值在数值精度范围内等于 0，强有力地拒绝了正态分布的原假设。这一结论为采用学生 t 分布和 APARCH 模型提供了统计依据。
+\end{enumerate}
+
+图~\ref{fig:timeseries} 展示了上证综指收盘价及对数收益率的时序图，图~\ref{fig:distribution} 展示了 ARIMA 残差分布的直方图（叠加正态分布概率密度函数对比）和 Quantile-Quantile (Q-Q) 图。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig1_timeseries.pdf}
+\caption{上证综指日收盘价与对数收益率时序图（2000--2026）}
+\label{fig:timeseries}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig2_distribution.pdf}
+\caption{ARIMA 残差分布直方图与 Q-Q 图（对比正态分布）}
+\label{fig:distribution}
+\end{figure}
+
+\section{平稳性与 ARCH 效应检验}\label{sec:stationarity}
+
+\subsection{单位根检验}
+
+本文同时采用 ADF 检验（Dickey and Fuller, 1979；原假设 $H_0$：存在单位根）和 KPSS 检验（Kwiatkowski et al., 1992；原假设 $H_0$：序列平稳）对收益率序列进行双重验证。检验形式均包含常数项，见表~\ref{tab:unitroot}。
+
+\begin{table}[H]
+\centering
+\caption{单位根检验结果}
+\label{tab:unitroot}
+\begin{tabular}{l c c c}
+\toprule
+检验方法 & 统计量 & $p$ 值 & 5\% 临界值 \\
+\midrule
+ADF & $-12.6088$ & $0.0000$ & $-2.8620$ \\
+KPSS & $0.0552$ & $0.1000$ & $0.4630$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ADF 检验的 $p$ 值接近于 0，强烈拒绝单位根原假设。KPSS 检验的统计量 0.0552 远小于 5\% 临界值 0.4630，未能拒绝平稳性原假设。两个检验的结论完全一致：\textbf{上证综指日对数收益率是平稳的 I(0) 过程}。
+
+\subsection{ARCH 效应检验}
+
+本文采用 Engle (1982) 提出的 ARCH-LM 检验。
+
+\begin{itemize}[nosep]
+    \item $\mathrm{ARCH\text{-}LM}(10)$ 统计量：$610.44$
+    \item $p$ 值：$\approx 0$（$1.02 \times 10^{-124}$）
+\end{itemize}
+
+$p$ 值在数值精度范围内等于 0，在 1\% 显著性水平下强烈拒绝``不存在 ARCH 效应''的原假设，\textbf{收益率平方存在极强的自相关}，波动率聚集特征显著。
+
+图~\ref{fig:arima_acf} 展示了 ARIMA 过滤后残差的 ACF 和 PACF 诊断图。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig3_arima_resid_acf.pdf}
+\caption{ARIMA 残差 ACF/PACF 及波动率聚集诊断图}
+\label{fig:arima_acf}
+\end{figure}
+
+\section{四种波动率模型}\label{sec:models}
+
+\subsection{均值方程：ARIMA 过滤}
+
+在波动率建模之前，本文首先使用 ARIMA 模型对收益率序列的均值动态进行过滤。采用 \texttt{pmdarima} 库的 \texttt{auto\_arima} 函数进行自动定阶，最终选定 ARIMA(3,0,3) 模型。ARIMA 过滤后得到的残差序列 $\{a_t\}$ 消除了线性自相关结构，剩余的 ARCH 效应将完全由波动率方程捕捉。经检验，ARIMA 残差仍存在极强的 ARCH 效应（$\mathrm{LM}(10) = 591.99$, $p = 9.14 \times 10^{-121}$），确认了 GARCH 族建模的必要性。
+
+\subsection{模型设定}
+
+本文构建四种波动率模型对 ARIMA 残差 $\{a_t\}$ 进行建模。所有模型均采用零均值（mean = Zero）设定，以聚焦于波动率动态的刻画。
+
+\subsubsection{Model 1: GARCH(1,1)-Normal}
+
+基准模型采用 Bollerslev (1986) 的 GARCH(1,1) 模型，新息分布假设为正态分布：
+
+\begin{align}
+a_t &= \sigma_t z_t, \quad z_t \overset{\mathrm{iid}}{\sim} \mathcal{N}(0, 1) \label{eq:garch_n} \\
+\sigma_t^2 &= \omega + \alpha_1 a_{t-1}^2 + \beta_1 \sigma_{t-1}^2 \notag
+\end{align}
+
+其中 $\omega > 0$, $\alpha_1 \geq 0$, $\beta_1 \geq 0$，$\alpha_1 + \beta_1 < 1$ 为协方差平稳条件。
+
+\subsubsection{Model 2: GARCH(1,1)-t}
+
+考虑到金融收益率的厚尾特征，第二个模型将新息分布替换为标准化学生 t 分布：
+
+\begin{equation}
+z_t \overset{\mathrm{iid}}{\sim} t_{\nu}, \quad \nu > 2 \label{eq:garch_t}
+\end{equation}
+
+波动率方程同 GARCH(1,1)-Normal。
+
+\subsubsection{Model 3: EGARCH(1,1)-t}
+
+为检验杠杆效应，本文采用 Nelson (1991) 的 EGARCH(1,1) 模型：
+
+\begin{equation}
+\ln\sigma_t^2 = \omega + \beta_1 \ln\sigma_{t-1}^2 + \alpha_1 \left( |z_{t-1}| - \mathbb{E}|z_{t-1}| \right) + \gamma_1 z_{t-1} \label{eq:egarch}
+\end{equation}
+
+其中 $\gamma_1$ 为杠杆效应参数。$\gamma_1 < 0$ 且显著表明负面冲击对波动率的影响大于正面冲击。EGARCH 的对数形式天然保证了方差的非负性。
+
+\subsubsection{Model 4: APARCH(1,1)-t}
+
+APARCH（Asymmetric Power ARCH）模型由 Ding, Granger and Engle (1993) 提出，是 GARCH 族中最具一般性的规格。其波动率方程定义为：
+
+\begin{equation}
+\sigma_t^{\delta} = \omega + \alpha_1 \left( |a_{t-1}| - \gamma_1 a_{t-1} \right)^{\delta} + \beta_1 \sigma_{t-1}^{\delta} \label{eq:aparch}
+\end{equation}
+
+其中 $\delta > 0$ 为幂变换参数（Box-Cox 变换），$\gamma_1$ 为非对称参数（$-1 < \gamma_1 < 1$）。APARCH 模型具有极其广泛的嵌套结构：
+\begin{itemize}[nosep]
+    \item $\delta = 2$, $\gamma_1 = 0$ $\Rightarrow$ 标准 GARCH 模型（Bollerslev, 1986）
+    \item $\delta = 2$, $\gamma_1 \neq 0$ $\Rightarrow$ GJR-GARCH 模型（Glosten et al., 1993）
+    \item $\delta = 1$, $\gamma_1 = 0$ $\Rightarrow$ TS-GARCH 模型（Taylor, 1986 / Schwert, 1990）
+    \item $\delta \to 0$, $\gamma_1 = 0$ $\Rightarrow$ 对数 GARCH 模型
+\end{itemize}
+
+APARCH 模型的核心理念是：\textbf{让数据通过极大似然估计自主选择最优的幂变换}，而非事先固定 $\delta = 2$。这一灵活性使 APARCH 能够更精确地刻画波动率对冲击的响应函数。
+
+\subsection{模型估计结果}
+
+四个模型均通过极大似然估计（MLE）在 ARIMA 残差上拟合，采用 BHHH 算法进行数值优化，最大迭代次数设为 2{,}000。表~\ref{tab:model_params} 报告了各模型的参数估计值及模型选择准则。
+
+\begin{table}[H]
+\centering
+\caption{四模型参数估计与模型选择准则}
+\label{tab:model_params}
+\begin{tabular}{l c c c c}
+\toprule
+参数 & GARCH(1,1)-N & GARCH(1,1)-t & EGARCH(1,1)-t & APARCH(1,1)-t \\
+\midrule
+$\omega$       & 0.02288  & 0.01766  & 0.01548  & 0.01964 \\
+$\alpha_1$     & 0.07764  & 0.07059  & 0.15468  & 0.07502 \\
+$\beta_1$      & 0.91313  & 0.92404  & 0.98990  & 0.92498 \\
+$\gamma_1$     & ---      & ---      & ---      & --- \\
+$\delta$       & ---      & ---      & ---      & 1.5535 \\
+$\nu$（自由度）& ---      & 4.7048   & 4.7708   & 4.9535 \\
+持续性        & 0.9908   & 0.9946   & 0.9899   & 0.9250 \\
+\midrule
+AIC           & 20{,}990.68 & 20{,}398.98 & \textbf{20{,}379.59} & 20{,}387.34 \\
+BIC           & 21{,}010.97 & 20{,}426.03 & 20{,}406.65 & 20{,}421.16 \\
+Log-Likelihood & $-10{,}492.34$ & $-10{,}195.49$ & \textbf{$-10{,}185.80$} & $-10{,}188.67$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{模型比较与分析}
+
+\subsubsection{拟合优度比较}
+
+按 AIC 准则，四个模型的排序为：
+\begin{equation}
+\mathrm{EGARCH(1,1)\text{-}t} \;\succ\; \mathrm{APARCH(1,1)\text{-}t} \;\succ\; \mathrm{GARCH(1,1)\text{-}t} \;\succ\; \mathrm{GARCH(1,1)\text{-}N}
+\label{eq:ranking}
+\end{equation}
+
+具体分析如下：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{学生 t 分布显著优于正态分布}。GARCH(1,1)-t 较 GARCH(1,1)-N 的 AIC 降低约 591.7 单位（从 20{,}990.68 至 20{,}398.98），对数似然值提升约 296.8 单位。自由度估计值 $\hat{\nu} \approx 4.70$ 进一步确认了收益率的极端厚尾特征。
+
+    \item \textbf{EGARCH 和 APARCH 在拟合上旗鼓相当}。EGARCH(1,1)-t 以 AIC $= 20{,}379.59$ 位居第一，APARCH(1,1)-t 以 AIC $= 20{,}387.34$ 紧随其后，二者之间的差距仅为 7.74 单位——根据 Burnham and Anderson (2004) 的经验标准，$\Delta\mathrm{AIC} < 2$ 表明两个模型具有``几乎相同的支持''，$2 < \Delta\mathrm{AIC} < 7$ 表明``较弱的差异''。这里的 $\Delta\mathrm{AIC} = 7.74$ 表明 EGARCH 略有优势但差距不大。考虑到 APARCH 比 EGARCH 多一个幂参数 $\delta$（AIC 的额外惩罚为 2 单位），APARCH在对数似然值上比EGARCH低2.87个单位（$10{,}188.67-10{,}185.80=2.87$），几乎刚好抵消了参数惩罚。\textbf{这两个模型在统计上几乎是等价的，但依据的信息准则不同（AIC vs BIC）可能会导致不同的选择}。
+
+    \item \textbf{杠杆效应参数 $\gamma_1$ 在 EGARCH 和 APARCH 中均未有效估计}。这表明在 2000 年后的上证综指中，正负冲击对波动率的影响不存在显著的不对称性。可能的解释包括：（1）涨跌停板制度的对称设计部分抵消了负面冲击的放大效应；（2）2000 年后机构投资者占比的提升降低了散户情绪驱动的不对称交易行为；（3）中国 A 股市场特有的政策干预机制（如``国家队''入市）在极端下行行情中提供了额外的缓冲。
+
+    \item \textbf{APARCH 的幂参数 $\delta = 1.55$ 提供了重要信息}。这一估计值显著不同于 1（标准差基准）和 2（方差基准），表明数据驱动的幂变换确实能够更好地拟合波动率动态。$\delta = 1.55$ 介于绝对值模型和方差模型之间，暗示波动率对冲击的响应既不完全线性（$\delta = 1$），也不完全二次（$\delta = 2$），而是处于一种中间状态。这一发现与传统基于 $\delta = 2$ 的 GARCH 模型形成了有趣的对比。
+
+    \item \textbf{波动率持续性极强}。三个 GARCH/EGARCH 模型的持续性参数（$\alpha_1 + \beta_1$ 或 $\beta_1$）均非常接近 1（0.9899--0.9946），确认了 IGARCH 效应的存在。值得注意的是，APARCH 模型的 $\beta_1 = 0.9250$ 显著低于其他三个模型，但这并不直接意味着 APARCH 的波动率持续性更低——因为幂变换 $\delta = 1.55$ 改变了参数的解释尺度。
+\end{enumerate}
+
+\section{模型诊断}\label{sec:diagnostics}
+
+\subsection{标准化残差分析}
+
+正确设定的波动率模型应使得标准化残差 $\hat{z}_t = a_t / \hat{\sigma}_t$ 近似为独立同分布的随机变量，且具有零均值和单位方差。表~\ref{tab:std_resid} 报告了各模型标准化残差的描述性统计量。
+
+\begin{table}[H]
+\centering
+\caption{标准化残差统计量（四模型对比）}
+\label{tab:std_resid}
+\begin{tabular}{l c c c c}
+\toprule
+模型 & 均值 & 标准差 & 偏度 & 峰度（超额） \\
+\midrule
+GARCH(1,1)-N  & $-0.0066$ & 1.0003 & $-0.4095$ & 4.1047 \\
+GARCH(1,1)-t  & $-0.0061$ & 0.9924 & $-0.4053$ & 4.1850 \\
+EGARCH(1,1)-t & $-0.0060$ & 0.9954 & $-0.4692$ & 4.8975 \\
+APARCH(1,1)-t & $-0.0061$ & 1.0100 & $-0.4152$ & 4.2138 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+标准化残差的均值均接近 0，标准差均接近 1（理论值），表明波动率方程对条件方差动态的刻画总体上是合理的。各模型的标准化残差呈现轻微的负偏（$-0.41$ 至 $-0.47$），与原始收益率的偏度方向一致。
+
+值得关注的是，\textbf{所有模型的标准化残差仍表现出超出标准正态分布的峰度}（4.10--4.90），即使采用学生 t 分布的模型也不例外。这一现象说明，即便 t 分布包含了厚尾特征，GARCH(1,1) 的单一滞后结构仍可能不足以完全捕捉波动率在多时间尺度上的复杂动态（Andersen and Bollerslev, 1998）。其中 EGARCH(1,1)-t 的标准化残差峰度最高（4.90），提示其对极端值的处理方式可能导致条件方差在某些时段的过度调整。
+
+图~\ref{fig:residuals} 展示了四个模型标准化残差的时序图，图~\ref{fig:qq} 展示了 Q-Q 检验图，图~\ref{fig:volatility} 展示了条件波动率序列对比。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig4_residuals_diag.pdf}
+\caption{标准化残差诊断图（四模型对比）}
+\label{fig:residuals}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig5_qq_plots.pdf}
+\caption{标准化残差 Q-Q 图（四模型对比正态分布）}
+\label{fig:qq}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig6_volatility.pdf}
+\caption{四模型条件波动率估计对比（样本内）}
+\label{fig:volatility}
+\end{figure}
+
+图~\ref{fig:std_resid_hist} 以直方图叠加 N(0,1) 参考曲线的形式，更直观地展示了各模型标准化残差与标准正态分布的偏离程度。各子图左上角标注了偏度和超额峰度，便于定量比较。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/add1_std_resid_hist.pdf}
+\caption{标准化残差直方图与 N(0,1) 参考分布（四模型 2$\times$2 对比）}
+\label{fig:std_resid_hist}
+\end{figure}
+
+从图~\ref{fig:volatility} 可以观察到，四个模型估计的条件波动率具有高度一致的走势，在高波动时段（如 2007--2009 年全球金融危机、2015 年中国股灾、2020 年新冠疫情初期）均捕获到了波动率的急剧攀升。GARCH(1,1)-N 的波动率路径在高波动时段略高于其他三个模型，这与正态分布假设下模型对极端观测赋予更高权重的特性一致。APARCH(1,1)-t 的波动率路径与其他两个厚尾模型几乎重合，但其在波峰和波谷的响应模式略有差异，反映了幂参数 $\delta = 1.55$ 带来的非线性调整。
+
+为进一步量化四模型波动率估计之间的分歧程度，图~\ref{fig:cond_vol_diff} 以 GARCH(1,1)-N 为基准，展示了其他三个模型条件波动率估计值与基准的差异。可以观察到，GARCH(1,1)-t 在多数时期与 GARCH(1,1)-N 的差异较小（$\pm 0.5$ 以内），但 APARCH 和 EGARCH 在高波动时期的差异可达 1.5--2.0 个波动率单位，反映出不同模型在波动率动态刻画上的系统性分歧。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/add2_cond_vol_diff.pdf}
+\caption{各模型与 GARCH(1,1)-N 的条件波动率差异}
+\label{fig:cond_vol_diff}
+\end{figure}
+
+\section{样本外预测与评估}\label{sec:forecast}
+
+\subsection{预测设置}
+
+波动率不可直接观测，因此需选取适当的代理变量来评估预测精度。本文使用绝对值 ARIMA 残差 $|a_t|$ 作为已实现波动率的代理变量：
+
+\begin{equation}
+\hat{\sigma}_t^{\text{proxy}} = |a_t|
+\label{eq:proxy}
+\end{equation}
+
+\medskip
+\noindent\textbf{关键改进——逐步重估}：本版报告采用逐步重估（re-estimate every 1 step）策略，即在每一步滚动预测之前，均使用扩展后的训练数据集重新估计 ARIMA 均值方程和四个波动率模型的全部参数。这与前版报告每 50 步重估的设置存在本质区别。逐步重估的优势在于模型参数能够更及时地纳入新信息，避免陈旧参数导致的预测偏差；代价是计算量约为前版的 50 倍（6{,}400 次 vs 128 次完整模型估计）。
+
+预测采用滚动窗口（rolling window）方式：初始训练窗口为前 90\% 的观测（$T_{\text{train}} = 5{,}759$），每次向前预测 1 步，\textbf{每步重新估计} ARIMA 和波动率模型。共完成 640 步样本外预测。
+
+\subsection{评估指标}
+
+本文使用以下四个指标评估预测精度：
+
+\[
+\mathrm{RMSE} = \sqrt{\frac{1}{m}\sum_{t=1}^{m} (\hat{\sigma}_t^{\text{proxy}} - \hat{\sigma}_t^{\text{pred}})^2}, \quad
+\mathrm{MAE} = \frac{1}{m}\sum_{t=1}^{m} \left| \hat{\sigma}_t^{\text{proxy}} - \hat{\sigma}_t^{\text{pred}} \right|
+\]
+
+\[
+\mathrm{SMAPE} = \frac{100\%}{m}\sum_{t=1}^{m} \frac{|\hat{\sigma}_t^{\text{proxy}} - \hat{\sigma}_t^{\text{pred}}|}
+{(|\hat{\sigma}_t^{\text{proxy}}| + |\hat{\sigma}_t^{\text{pred}}|) / 2}, \quad
+\mathrm{QLIKE} = \frac{1}{m}\sum_{t=1}^{m} \left[ \ln(\hat{\sigma}_t^{\text{pred}})^2 + \frac{(\hat{\sigma}_t^{\text{proxy}})^2}{(\hat{\sigma}_t^{\text{pred}})^2} \right]
+\]
+
+其中 $m = 640$ 为测试集长度。QLIKE（Quasi-Likelihood）损失函数对波动率低估的惩罚大于高估，更符合风险管理实践中对下行风险的关注（Patton, 2011）。
+
+\subsection{预测结果}
+
+预测评估结果来源于，见表~\ref{tab:forecast}。
+
+\begin{table}[H]
+\centering
+\caption{滚动窗口样本外波动率预测评估（640 步，逐步重估）}
+\label{tab:forecast}
+\begin{tabular}{l c c c c}
+\toprule
+模型 & RMSE & MAE & SMAPE (\%) & QLIKE \\
+\midrule
+GARCH(1,1)-N  & 0.8401 & 0.6156 & 82.588 & 0.9439 \\
+GARCH(1,1)-t  & 0.8463 & 0.6222 & 83.010 & 0.9429 \\
+\textbf{EGARCH(1,1)-t} & \textbf{0.8235} & \textbf{0.5977} & \textbf{81.883} & 0.9691 \\
+APARCH(1,1)-t & 0.8280 & 0.6059 & 82.338 & \textbf{0.9352} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+从表~\ref{tab:forecast} 可以得出以下核心发现：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{逐步重估大幅提升预测精度}。相比前版报告每 50 步重估的结果，四个模型的 RMSE 整体下降约 8\%--10\%（如 EGARCH-t 的 RMSE 从 0.8992 降至 0.8235，降低 8.4\%）。这表明在滚动预测框架下，及时更新参数对预测精度的影响不可忽视。
+
+    \item \textbf{EGARCH(1,1)-t 在 RMSE/MAE/SMAPE 三个指标上全面领先}。RMSE $=0.8235$ 是所有模型中最低的，较最差的 GARCH(1,1)-t（0.8463）低约 2.7\%，较基准 GARCH(1,1)-N（0.8401）低约 2.0\%。这与样本内 AIC 的排序完全一致，表明 EGARCH 在样本内和样本外均具有一定优势。
+
+    \item \textbf{APARCH(1,1)-t 在 QLIKE 指标上持续最优}。QLIKE $=0.9352$ 显著低于 
+    EGARCH(1,1)-t 的 0.9691（低约 3.5\%），也低于两个 GARCH 模型。QLIKE 对波动率低估施加了更严厉的惩罚，APARCH 在该指标上的优势表明其预测在极端行情下（波动率急剧攀升时）的表现更为稳健，不易出现严重低估。这一优势可能来源于幂参数 $\delta = 1.55$ 带来的更灵活的波动率动态响应。
+
+    \item \textbf{GARCH-N 再次优于 GARCH-t，``拟合—预测''权衡重现}。GARCH(1,1)-N 的 RMSE（0.8401）低于 GARCH(1,1)-t（0.8463），MAE 和 SMAPE 也均有优势。这与前期报告的发现一致：\textbf{t 分布假设在样本内拟合的优势（AIC 降低 592 单位）未能在样本外转化为预测精度的改善}。t 分布的额外参数 $\nu$ 在样本外引入了额外的参数不确定性。
+
+    \item \textbf{EGARCH 与 APARCH 的 RMSE 差距缩小至 0.0045}（0.8235 vs 0.8280），仅为前版的约一半（前版差距 0.0090）。这表明在更频繁的参数更新下，两个模型的预测能力趋于一致。
+\end{enumerate}
+
+图~\ref{fig:forecast} 展示了滚动窗口预测下四个模型波动率预测值与实际代理变量的对比。图~\ref{fig:eval_bar} 以簇状柱状图的形式展示了四项评估指标的对比，各柱体上标注的数值便于精确比较模型间的差异幅度。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig7_forecast_rolling.pdf}
+\caption{滚动窗口样本外波动率预测对比（四模型，前 250 步）}
+\label{fig:forecast}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{renewrenew/figures/fig8_eval_bar.pdf}
+\caption{滚动窗口样本外预测评估指标对比（四模型、四指标）}
+\label{fig:eval_bar}
+\end{figure}
+
+\subsection{Diebold-Mariano 检验}
+
+为从统计上推断模型间预测精度的差异是否显著，本文采用 Diebold and Mariano (1995) 提出的 DM 检验。检验采用平方误差损失函数。原假设 $H_0$：两个模型具有相同的预测精度（即 $\mathbb{E}[d_t] = 0$）。四模型共产生 $\binom{4}{2} = 6$ 对两两比较。检验结果来源于，见表~\ref{tab:dm}。
+
+\begin{table}[H]
+\centering
+\caption{Diebold-Mariano 检验结果（四模型，6 对比较，逐步重估）}
+\label{tab:dm}
+\begin{tabular}{l c c c}
+\toprule
+比较对 & DM 统计量 & $p$ 值 & 结论（$\alpha = 0.05$） \\
+\midrule
+GARCH(1,1)-N vs GARCH(1,1)-t  & $-2.3393$ & \textbf{0.0196} & GARCH-N 更优** \\
+GARCH(1,1)-N vs EGARCH(1,1)-t  & $+1.9838$ & \textbf{0.0477} & EGARCH-t 更优** \\
+GARCH(1,1)-N vs APARCH(1,1)-t  & $+2.3184$ & \textbf{0.0207} & APARCH-t 更优** \\
+GARCH(1,1)-t vs EGARCH(1,1)-t  & $+3.4999$ & \textbf{0.0005} & EGARCH-t 更优*** \\
+GARCH(1,1)-t vs APARCH(1,1)-t  & $+5.3751$ & \textbf{0.0000} & APARCH-t 更优*** \\
+EGARCH(1,1)-t vs APARCH(1,1)-t & $-1.3307$ & \textbf{0.1837} & EGARCH-t 略优（不显著） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+DM 检验结果揭示了以下层次结构：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{EGARCH(1,1)-t 和 APARCH(1,1)-t 构成第一梯队}，二者在 5\% 显著性水平上均显著优于两个 GARCH 模型（所有 $p < 0.05$）。\textbf{在二者之间的直接比较中，EGARCH 以 DM $=-1.33$ 但 $p = 0.1837$，未能拒绝等价预测精度原假设}——这与前版报告（DM $=-3.70$，$p=0.0002$）形成鲜明对比。这一变化表明，在逐步重估框架下，EGARCH 和 APARCH 之间的预测精度差异被大幅缩小至不显著水平。两个模型在统计意义上是等价的。
+
+    \item \textbf{GARCH(1,1)-N 构成第二梯队}，显著优于 GARCH(1,1)-t（DM $=-2.34$, $p=0.0196$），但与 EGARCH/APARCH 的差距在 5\% 水平上仍显著（DM $> 1.96$，$p < 0.05$）。
+
+    \item \textbf{GARCH(1,1)-t 在各比较中全面处于劣势}，在六个 DM 检验中输掉三场，表明在逐步重估滚动预测框架下，GARCH-t 是四个模型中预测表现最弱的。
+
+    \item \textbf{总排序（按平方误差损失）}为：$\mathrm{EGARCH\text{-}t} \;\approx\; \mathrm{APARCH\text{-}t} \;\succ\; \mathrm{GARCH\text{-}N} \;\succ\; \mathrm{GARCH\text{-}t}$，其中 $\succ$ 表示在 5\% 显著性水平上显著更优，$\approx$ 表示差异不显著。
+\end{enumerate}
+
+\section{结论与讨论}\label{sec:conclusion}
+
+\subsection{主要发现}
+
+本文基于 2000 年至 2026 年的上证综指日度数据（共 6{,}399 个观测），通过 ARIMA 过滤 + 四模型 GARCH 族框架，系统比较了 GARCH(1,1)-N、GARCH(1,1)-t、EGARCH(1,1)-t 和 APARCH(1,1)-t 四种波动率模型在样本内拟合和样本外滚动预测中的表现。主要结论如下：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{收益率分布显著偏离正态性}。超额峰度 5.76、JB 检验 $p \approx 0$、ARCH-LM 检验 LM $= 610.44$（$p = 1.02\times10^{-124}$），确认了尖峰厚尾和波动率聚集等金融收益率典型事实在 2000 年后中国 A 股市场的持续存在。
+
+    \item \textbf{EGARCH(1,1)-t 在样本内拟合中表现最优}（AIC = 20{,}379.59），APARCH(1,1)-t 以微弱差距（$\Delta\mathrm{AIC} = 7.74$）位居第二。学生 t 分布对厚尾的捕捉是 AIC 改善的主要驱动力，较正态分布模型降低了约 592 单位。杠杆效应参数 $\gamma_1$ 在 EGARCH 和 APARCH 中均未有效估计，确认了上证综指 2000 年后的波动率不具有典型的不对称特征。
+
+    \item \textbf{样本外预测中，EGARCH(1,1)-t 和 APARCH(1,1)-t 均显著优于两个 GARCH 模型}。EGARCH 在 RMSE 上最优（0.8235），APARCH 在 QLIKE 上最优（0.9352）。\textbf{在逐步重估框架下，EGARCH 和 APARCH 之间的差异不再显著}（DM $=-1.33$, $p=0.1837$），两者在统计意义上是等价的预测模型。
+
+    \item \textbf{APARCH 模型的幂参数 $\delta = 1.55$ 证实了数据驱动幂变换的价值}。这一估计值与 $\delta = 1$（绝对值模型）和 $\delta = 2$（方差模型）均存在显著差异，提示上证综指的波动率对冲击的响应函数具有独特的非线性形态，值得在更广泛的资产类别中进行验证。
+
+    \item \textbf{滚动预测框架下，GARCH-N 再次优于 GARCH-t}（DM $=-2.34$, $p=0.0196$），与前期报告的结论一致。这一``拟合—预测''权衡的反复出现说明，\textbf{在样本外预测任务中，模型的简洁性（parsimony）可能比样本内拟合优度更为重要}。
+
+    \item \textbf{逐步重估显著提升了预测精度，并改变了统计推断}。相比每 50 步重估，逐步重估使所有模型的 RMSE 下降约 8\%--10\%，且 EGARCH vs APARCH 的 DM 统计量从高度显著（$-3.70$, $p=0.0002$）变为不显著（$-1.33$, $p=0.1837$）。这一发现强调了模型重估频率作为滚动预测方法论设计变量的重要性。
+
+    \item \textbf{波动率持续性极强，存在 IGARCH 效应}。$\alpha_1 + \beta_1$（或 EGARCH 的 $\beta_1$）在 GARCH/EGARCH 三个模型中均接近 1（0.9899--0.9946），对长期风险管理和压力测试具有重要意义。
+\end{enumerate}
+
+\subsection{关于 EGARCH 与 APARCH 取舍的进一步讨论}
+
+逐步重估框架下，EGARCH 与 APARCH 在平方误差损失上的差异不再显著（$p = 0.1837$），这意味着二者的选择不应再基于 RMSE 这一单一指标，而应综合考虑以下因素：
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{QLIKE 指标}：APARCH 在 QLIKE 上持续优于 EGARCH（0.9352 vs 0.9691），且这一指标被 Patton (2011) 论证为对噪声代理变量具有稳健性。对于需要重点关注下行风险的应用场景（如 VaR 计算和压力测试），APARCH 可能是更安全的选择。
+
+    \item \textbf{模型简洁性}：EGARCH 使用对数波动率形式，天然保证方差非负且无需参数约束检验，在估计稳定性和计算效率上具有优势。APARCH 多一个幂参数 $\delta$，其模型复杂性在特定场景下可能带来额外的估计不确定性。
+
+    \item \textbf{解释性}：当 $\gamma_1$ 不显著时（如本文的情况），EGARCH 和 APARCH 的非对称特性实际上都未被有效利用。然而 APARCH 的幂参数 $\delta$ 提供了额外的诊断信息——即便在非对称性缺失的情况下，$\delta = 1.55$ 仍揭示了波动率动态的重要特征。
+
+    综合来看，\textbf{在 2000 年后的上证综指波动率建模中，EGARCH 和 APARCH 构成了一种有意义的互补}：EGARCH 在 RMSE/MAE 导向的应用中更为稳健，APARCH 在 QLIKE 导向和需要更深层次波动率动态理解的场景中更具价值。
+\end{enumerate}
+
+\subsection{研究局限与展望}
+
+\begin{enumerate}[nosep,label=(\arabic*)]
+    \item \textbf{波动率代理变量}。本文使用 $|a_t|$ 作为已实现波动率的代理，其含有的日内噪音限制了评估精度。未来可引入高频数据构建已实现波动率测度（如 Realized Variance, Andersen et al., 2003），以获得更精确的模型评估基准。
+
+    \item \textbf{计算成本约束}。逐步重估在 640 步预测窗口下耗时约 40 分钟（6{,}400 次完整模型估计），这一方法论在更大数据集或更多模型上的推广需要考虑计算效率。未来的工作可探索折中方案，如自适应重估频率（在高波动时期增加重估频率，在低波动时期降低频率）。
+
+    \item \textbf{APARCH 模型的进一步探索}。$\delta = 1.55$ 的发现提示了幂变换在波动率建模中的潜力。未来可比较不同幂参数约束下的 APARCH 变体（如 $\delta$ 固定为 1 或 2 的情况），以更精确地分解幂变换和非对称性各自的贡献。
+
+    \item \textbf{长记忆模型}。鉴于 IGARCH 效应的持续存在，FIGARCH（Baillie et al., 1996）或 HYGARCH（Davidson, 2004）等长记忆波动率模型可能是更合适的建模框架。
+
+    \item \textbf{结构突变}。2000 年至今的样本中仍可能存在多个市场结构断点——如 2005 年股权分置改革、2015 年股灾及熔断机制、2020 年新冠疫情冲击、2024 年以来的资本市场改革等。分段建模或马尔可夫转换机制可能提供更精细的波动率刻画。
+
+    \item \textbf{预测方案的稳健性}。本文仅采用滚动窗口 1 步预测，多步预测和固定窗口方案的结论可能有所不同。此外，重估频率对 DM 检验结论的敏感性（本版 vs 前版）提示未来的研究应系统考察这一方法论变量。
+
+    \item \textbf{APARCH 幂参数的时变性}。幂参数 $\delta$ 可能并非固定常数，而是在不同市场体制下有所变化。未来可探索时变幂参数 APARCH 模型的可行性和预测表现。
+\end{enumerate}
+
+% ============================================================
+% 参考文献
+% ============================================================
+\begin{thebibliography}{99}
+
+\bibitem{andersen1998answering}
+Andersen T G, Bollerslev T.
+\newblock Answering the skeptics: Yes, standard volatility models do provide accurate forecasts.
+\newblock \textit{International Economic Review}, 1998, 39(4): 885--905.
+
+\bibitem{andersen2003modeling}
+Andersen T G, Bollerslev T, Diebold F X, et al.
+\newblock Modeling and forecasting realized volatility.
+\newblock \textit{Econometrica}, 2003, 71(2): 579--625.
+
+\bibitem{baillie1996fractionally}
+Baillie R T, Bollerslev T, Mikkelsen H O.
+\newblock Fractionally integrated generalized autoregressive conditional heteroskedasticity.
+\newblock \textit{Journal of Econometrics}, 1996, 74(1): 3--30.
+
+\bibitem{bollerslev1986generalized}
+Bollerslev T.
+\newblock Generalized autoregressive conditional heteroskedasticity.
+\newblock \textit{Journal of Econometrics}, 1986, 31(3): 307--327.
+
+\bibitem{burnham2004multimodel}
+Burnham K P, Anderson D R.
+\newblock Multimodel inference: Understanding AIC and BIC in model selection.
+\newblock \textit{Sociological Methods \& Research}, 2004, 33(2): 261--304.
+
+\bibitem{davidson2004moment}
+Davidson J.
+\newblock Moment and memory properties of linear conditional heteroscedasticity models, and a new model.
+\newblock \textit{Journal of Business \& Economic Statistics}, 2004, 22(1): 16--29.
+
+\bibitem{dickey1979distribution}
+Dickey D A, Fuller W A.
+\newblock Distribution of the estimators for autoregressive time series with a unit root.
+\newblock \textit{Journal of the American Statistical Association}, 1979, 74(366): 427--431.
+
+\bibitem{diebold1995comparing}
+Diebold F X, Mariano R S.
+\newblock Comparing predictive accuracy.
+\newblock \textit{Journal of Business \& Economic Statistics}, 1995, 13(3): 253--263.
+
+\bibitem{ding1993long}
+Ding Z, Granger C W J, Engle R F.
+\newblock A long memory property of stock market returns and a new model.
+\newblock \textit{Journal of Empirical Finance}, 1993, 1(1): 83--106.
+
+\bibitem{engle1982autoregressive}
+Engle R F.
+\newblock Autoregressive conditional heteroscedasticity with estimates of the variance of United Kingdom inflation.
+\newblock \textit{Econometrica}, 1982, 50(4): 987--1007.
+
+\bibitem{hansen2005forecast}
+Hansen P R, Lunde A.
+\newblock A forecast comparison of volatility models: Does anything beat a GARCH(1,1)?
+\newblock \textit{Journal of Applied Econometrics}, 2005, 20(7): 873--889.
+
+\bibitem{kwiatkowski1992testing}
+Kwiatkowski D, Phillips P C B, Schmidt P, et al.
+\newblock Testing the null hypothesis of stationarity against the alternative of a unit root.
+\newblock \textit{Journal of Econometrics}, 1992, 54(1--3): 159--178.
+
+\bibitem{nelson1991conditional}
+Nelson D B.
+\newblock Conditional heteroskedasticity in asset returns: A new approach.
+\newblock \textit{Econometrica}, 1991, 59(2): 347--370.
+
+\bibitem{patton2011volatility}
+Patton A J.
+\newblock Volatility forecast comparison using imperfect volatility proxies.
+\newblock \textit{Journal of Econometrics}, 2011, 160(1): 246--256.
+
+\end{thebibliography}
+
+\end{document}
